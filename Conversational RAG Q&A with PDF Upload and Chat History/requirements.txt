@@ -1,1 +1,4 @@
 langchain_community
+langchain_huggingface
+sentence-transformers
+langchain-chroma
