@@ -130,16 +130,6 @@ def render_sources(docs):
             st.caption(f"{name}, page {page + 1}" if page is not None else name)
             st.text(doc.page_content)
 
-def stream_answer(question, docs):
-    for chunk in conversational_rag_chain.stream(
-        {"question": question},
-        config={"configurable": {"session_id": session_id}},
-    ):
-        if "docs" in chunk:
-            docs.extend(chunk["docs"])
-        if "answer" in chunk:
-            yield chunk["answer"]
-
 session_sources = st.session_state.sources.setdefault(session_id, [])
 assistant_turn = 0
 for message in get_session_history(session_id).messages:
@@ -158,9 +148,14 @@ if question:
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        docs = []
         try:
-            st.write_stream(stream_answer(question, docs))
+            with st.spinner("Thinking..."):
+                result = conversational_rag_chain.invoke(
+                    {"question": question},
+                    config={"configurable": {"session_id": session_id}},
+                )
+            answer, docs = result["answer"], result["docs"]
+            st.markdown(answer)
         except anthropic.AuthenticationError:
             st.error("The Anthropic API key was rejected. Check it in the sidebar.")
         else:
