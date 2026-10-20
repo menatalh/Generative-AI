@@ -1,4 +1,5 @@
 # Inputs: API Key (secure), Session ID, PDF uploader, chat input.
+# Views: answer stream, retrieved sources (optional), visible chat transcript.
 import os
 import tempfile
 from operator import itemgetter
@@ -13,6 +14,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -31,15 +33,17 @@ with st.sidebar:
 
     uploaded_files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
 
+    show_sources = st.toggle("Show retrieved sources", value=False)
+
 if not api_key:
-    st.info("Enter your Anthropic API key in the sidebar to start")
+    st.info("Enter your Anthropic API key in the sidebar to start.")
     st.stop()
 
 if not uploaded_files:
-    st.info("Upload one or more PDFs to ask questions about")
+    st.info("Upload one or more PDFs to ask questions about.")
     st.stop()
-
-def get_retriever(files): 
+ 
+def build_retriever(files):
     docs = []
     with tempfile.TemporaryDirectory() as tmp_dir:
         for name, data in files:
@@ -52,14 +56,14 @@ def get_retriever(files):
     vectorstore = Chroma.from_documents(
         chunks,
         HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
-        collection_name=".chroma/student-rag"
+        collection_name=f"student-rag-{uuid.uuid4().hex}",
     )
     return vectorstore.as_retriever(search_kwargs={"k": 4})
 
 
 retriever = build_retriever(tuple((f.name, f.getvalue()) for f in uploaded_files))
 
-llm = ChatAnthropic(model="claude-opus-5-5", max_tokens=4096, effort="low")
+llm = ChatAnthropic(model="claude-opus-5-5", max_tokens=4096, effort="low", api_key=api_key)
 
 # contextualize question: rewrite follow-ups into unambiguous questions using chat history
 contextualize_prompt = ChatPromptTemplate.from_messages([
@@ -72,10 +76,7 @@ contextualize_prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}"),
 ])
 
-def join_docs(docs):
-    return "\n\n".join(doc.page_content for doc in docs)
-
-retrieval_chain = contextualize_prompt | llm | StrOutputParser() | retriever | join_docs
+retrieval_chain = contextualize_prompt | llm | StrOutputParser() | retriever # {"docs": [...], "question": ..., "chat_history": [...]
 
 answer_prompt = ChatPromptTemplate.from_messages([
     ("system",
@@ -87,14 +88,26 @@ answer_prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}"),
 ])
 
-rag_chain = {
-    "context": retrieval_chain,
+def join_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+answer_chain = {
+    "context": itemgetter("docs") | RunnableLambda(join_docs),
     "question": itemgetter("question"),
     "chat_history": itemgetter("chat_history"),
 } | answer_prompt | llm | StrOutputParser()
 
+rag_chain = {
+    "docs": retrieval_chain,
+    "question": itemgetter("question"),
+    "chat_history": itemgetter("chat_history"),
+} | RunnablePassthrough.assign(answer=answer_chain)
+
 if "store" not in st.session_state:
     st.session_state.store = {}
+
+if "sources" not in st.session_state:
+    st.session_state.sources = {}
 
 def get_session_history(session_id):
     if session_id not in st.session_state.store:
@@ -106,19 +119,51 @@ conversational_rag_chain = RunnableWithMessageHistory(
     get_session_history,
     input_messages_key="question",
     history_messages_key="chat_history",
+    output_messages_key="answer",
 )
 
-for message in get_session_history(session_id).messages:
-    with st.chat_message("user" if message.type == "human" else "assistant"):
-        st.markdown(message.content)
+def render_sources(docs):
+    with st.expander(f"Sources ({len(docs)})", icon=":material/description:", type="compact"):
+        for doc in docs:
+            name = os.path.basename(doc.metadata.get("source", "PDF"))
+            page = doc.metadata.get("page")
+            st.caption(f"{name}, page {page + 1}" if page is not None else name)
+            st.text(doc.page_content)
 
-question = st.chat_input("Ask a question about your PDFs")
+def stream_answer(question, docs):
+    for chunk in conversational_rag_chain.stream(
+        {"question": question},
+        config={"configurable": {"session_id": session_id}},
+    ):
+        if "docs" in chunk:
+            docs.extend(chunk["docs"])
+        if "answer" in chunk:
+            yield chunk["answer"]
+
+session_sources = st.session_state.sources.setdefault(session_id, [])
+assistant_turn = 0
+for message in get_session_history(session_id).messages:
+    if message.type == "human":
+        with st.chat_message("user"):
+            st.markdown(message.content)
+    else:
+        with st.chat_message("assistant"):
+            st.markdown(message.content)
+            render_sources(session_sources[assistant_turn])
+        assistant_turn += 1
+
+question = st.chat_input("Ask a question about your PDFs", submit_mode="disable")
 if question:
     with st.chat_message("user"):
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        st.write_stream(conversational_rag_chain.stream(
-            {"question": question},
-            config={"configurable": {"session_id": session_id}},
-        ))
+        docs = []
+        try:
+            st.write_stream(stream_answer(question, docs))
+        except anthropic.AuthenticationError:
+            st.error("The Anthropic API key was rejected. Check it in the sidebar.")
+        else:
+            session_sources.append(docs)
+            if show_sources:
+                render_sources(docs)
