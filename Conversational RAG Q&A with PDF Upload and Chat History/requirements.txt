@@ -3,3 +3,4 @@ langchain_huggingface
 sentence-transformers
 langchain-chroma
 langchain-anthropic
+streamlit
