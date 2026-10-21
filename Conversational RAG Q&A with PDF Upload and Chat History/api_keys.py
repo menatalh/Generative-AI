@@ -28,7 +28,7 @@ def render_api_key() -> str | None:
         entered = st.text_input(
             "Enter your key",
             type="password",
-            placeholder="ant_..."
+            placeholder="gsk_..."
         ).strip()
 
         if not entered:

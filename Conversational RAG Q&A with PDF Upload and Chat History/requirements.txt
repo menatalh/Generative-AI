@@ -2,5 +2,5 @@ langchain_community
 langchain_huggingface
 sentence-transformers
 langchain-chroma
-langchain-anthropic
+langchain-groq
 streamlit

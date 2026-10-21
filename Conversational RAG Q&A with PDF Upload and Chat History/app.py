@@ -6,9 +6,8 @@ from operator import itemgetter
 import uuid
 from dotenv import load_dotenv
 
-import anthropic
+import groq
 import streamlit as st
-from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.chat_history import InMemoryChatMessageHistory
@@ -16,6 +15,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -25,7 +25,7 @@ st.set_page_config(page_title="Conversational RAG with PDFs", page_icon="📄")
 st.title("Conversational RAG Q&A with PDFs")
 
 with st.sidebar:
-    api_key = st.text_input("Anthropic API key", type="password", placeholder="sk-ant-...")
+    api_key = st.text_input("Groq API key", type="password", placeholder="gsk_...")
 
     if "default_session_id" not in st.session_state:
         st.session_state.default_session_id = uuid.uuid4().hex[:8]
@@ -36,7 +36,7 @@ with st.sidebar:
     show_sources = st.toggle("Show retrieved sources", value=False)
 
 if not api_key:
-    st.info("Enter your Anthropic API key in the sidebar to start.")
+    st.info("Enter your Groq API key in the sidebar to start.")
     st.stop()
 
 if not uploaded_files:
@@ -63,7 +63,7 @@ def build_retriever(files):
 
 retriever = build_retriever(tuple((f.name, f.getvalue()) for f in uploaded_files))
 
-llm = ChatAnthropic(model="claude-opus-5-5", max_tokens=4096, effort="low", api_key=api_key)
+llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=api_key)
 
 # contextualize question: rewrite follow-ups into unambiguous questions using chat history
 contextualize_prompt = ChatPromptTemplate.from_messages([
@@ -156,8 +156,8 @@ if question:
                 )
             answer, docs = result["answer"], result["docs"]
             st.markdown(answer)
-        except anthropic.AuthenticationError:
-            st.error("The Anthropic API key was rejected. Check it in the sidebar.")
+        except groq.AuthenticationError:
+            st.error("The Groq API key was rejected. Check it in the sidebar.")
         else:
             session_sources.append(docs)
             if show_sources:
