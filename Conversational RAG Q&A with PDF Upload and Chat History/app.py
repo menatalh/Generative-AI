@@ -1,11 +1,9 @@
-# Inputs: API Key (secure), Session ID, PDF uploader, chat input.
-# Views: answer stream, retrieved sources (optional), visible chat transcript.
 import os
 import tempfile
 from operator import itemgetter
 import uuid
-from dotenv import load_dotenv
 
+import chromadb
 import groq
 import streamlit as st
 from langchain_chroma import Chroma
@@ -19,10 +17,28 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-load_dotenv()
-
 st.set_page_config(page_title="Conversational RAG with PDFs", page_icon="📄")
 st.title("Conversational RAG Q&A with PDFs")
+
+@st.cache_resource 
+def get_chroma_client():
+    return chromadb.EphemeralClient()
+
+def index_pdfs():
+    files = st.session_state.pdfs
+    if not files:
+        return
+    docs = []
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        for f in files:
+            path = os.path.join(tmp_dir, f.name)
+            with open(path, "wb") as out:
+                out.write(f.getvalue())
+            docs.extend(PyPDFLoader(path).load())
+
+    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
+    Chroma.from_documents(chunks, HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),collection_name="student-rag",client=get_chroma_client())
+
 
 with st.sidebar:
     api_key = st.text_input("Groq API key", type="password", placeholder="gsk_...")
@@ -31,7 +47,10 @@ with st.sidebar:
         st.session_state.default_session_id = uuid.uuid4().hex[:8]
     session_id = st.text_input("Session ID", value=st.session_state.default_session_id)
 
-    uploaded_files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
+    uploaded_files = st.file_uploader(
+        "Upload PDFs", type="pdf", accept_multiple_files=True,
+        key="pdfs", on_change=index_pdfs,
+    )
 
     show_sources = st.toggle("Show retrieved sources", value=False)
 
@@ -42,30 +61,11 @@ if not api_key:
 if not uploaded_files:
     st.info("Upload one or more PDFs to ask questions about.")
     st.stop()
- 
-def build_retriever(files):
-    docs = []
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        for name, data in files:
-            path = os.path.join(tmp_dir, name)
-            with open(path, "wb") as f:
-                f.write(data)
-            docs.extend(PyPDFLoader(path).load())
 
-    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
-    vectorstore = Chroma.from_documents(
-        chunks,
-        HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
-        collection_name=f"student-rag-{uuid.uuid4().hex}",
-    )
-    return vectorstore.as_retriever(search_kwargs={"k": 4})
+retriever = Chroma(collection_name="student-rag", client=get_chroma_client(), embedding_function=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")).as_retriever(search_kwargs={"k": 4})
 
+llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0, api_key=api_key)
 
-retriever = build_retriever(tuple((f.name, f.getvalue()) for f in uploaded_files))
-
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=api_key)
-
-# contextualize question: rewrite follow-ups into unambiguous questions using chat history
 contextualize_prompt = ChatPromptTemplate.from_messages([
     ("system",
      "Given a chat history and the latest user question, which might reference context in the "
