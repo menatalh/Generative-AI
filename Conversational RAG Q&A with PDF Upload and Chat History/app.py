@@ -17,6 +17,8 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from api_keys import render_api_key
+
 st.set_page_config(page_title="Conversational RAG with PDFs", page_icon="📄")
 st.title("Conversational RAG Q&A with PDFs")
 
@@ -41,7 +43,7 @@ def index_pdfs():
 
 
 with st.sidebar:
-    api_key = st.text_input("Groq API key", type="password", placeholder="gsk_...")
+    api_key = render_api_key()
 
     if "default_session_id" not in st.session_state:
         st.session_state.default_session_id = uuid.uuid4().hex[:8]
@@ -55,7 +57,6 @@ with st.sidebar:
     show_sources = st.toggle("Show retrieved sources", value=False)
 
 if not api_key:
-    st.info("Enter your Groq API key in the sidebar to start.")
     st.stop()
 
 if not uploaded_files:
@@ -157,6 +158,7 @@ if question:
             answer, docs = result["answer"], result["docs"]
             st.markdown(answer)
         except groq.AuthenticationError:
+            st.session_state.pop("groq_api_key", None)
             st.error("The Groq API key was rejected. Check it in the sidebar.")
         else:
             session_sources.append(docs)

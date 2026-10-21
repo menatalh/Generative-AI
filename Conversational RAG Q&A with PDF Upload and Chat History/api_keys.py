@@ -1,11 +1,11 @@
 """
-The key lives only in st.session_state for the current session.\
+The key lives only in st.session_state for the current session.
 It is never written to disk, never put in os.environ.
 """
 
 import streamlit as st
 
-API_KEY = ""
+API_KEY = "groq_api_key"
 
 def mask(key: str) -> str:
     """Return a safe-to-display version of an api key 123...789"""
