@@ -17,7 +17,7 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from api_keys import render_api_key
+from api_key import APIKey
 
 st.set_page_config(page_title="Conversational RAG with PDFs", page_icon="📄")
 st.title("Conversational RAG Q&A with PDFs")
@@ -41,9 +41,10 @@ def index_pdfs():
     chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
     Chroma.from_documents(chunks, HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),collection_name="student-rag",client=get_chroma_client())
 
+groq_key = APIKey("Groq", "gsk_")
 
 with st.sidebar:
-    api_key = render_api_key()
+    api_key = groq_key.render()
 
     if "default_session_id" not in st.session_state:
         st.session_state.default_session_id = uuid.uuid4().hex[:8]
@@ -158,7 +159,7 @@ if question:
             answer, docs = result["answer"], result["docs"]
             st.markdown(answer)
         except groq.AuthenticationError:
-            st.session_state.pop("groq_api_key", None)
+            groq_key.forget()
             st.error("The Groq API key was rejected. Check it in the sidebar.")
         else:
             session_sources.append(docs)
