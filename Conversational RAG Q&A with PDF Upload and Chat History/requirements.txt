@@ -3,4 +3,5 @@ langchain_huggingface
 sentence-transformers
 langchain-chroma
 langchain-groq
+rank_bm25
 streamlit

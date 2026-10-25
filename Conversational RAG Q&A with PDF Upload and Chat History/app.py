@@ -11,13 +11,14 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from langchain_core.runnables import ConfigurableField, RunnableLambda, RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from api_key import APIKey
+from retriever import SEARCH_MODES, HybridRetriever
 
 st.set_page_config(page_title="Conversational RAG with PDFs", page_icon="📄")
 st.title("Conversational RAG Q&A with PDFs")
@@ -64,7 +65,8 @@ if not uploaded_files:
     st.info("Upload one or more PDFs to ask questions about.")
     st.stop()
 
-retriever = Chroma(collection_name="student-rag", client=get_chroma_client(), embedding_function=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")).as_retriever(search_kwargs={"k": 4})
+vectorstore = Chroma(collection_name="student-rag", client=get_chroma_client(), embedding_function=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"))
+retriever = HybridRetriever(vectorstore=vectorstore, k=4).configurable_fields(mode=ConfigurableField(id="search_mode"))
 
 llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0, api_key=api_key)
 
@@ -144,7 +146,12 @@ for message in get_session_history(session_id).messages:
             render_sources(session_sources[assistant_turn])
         assistant_turn += 1
 
-question = st.chat_input("Ask a question about your PDFs", submit_mode="disable")
+with st.bottom.container(horizontal=True, vertical_alignment="bottom"):
+    search_mode = st.selectbox(
+        "Search mode", SEARCH_MODES, format_func=str.capitalize,
+        label_visibility="collapsed", width=130,
+    )
+    question = st.chat_input("Ask a question about your PDFs", submit_mode="disable")
 if question:
     with st.chat_message("user"):
         st.markdown(question)
@@ -154,7 +161,7 @@ if question:
             with st.spinner("Thinking..."):
                 result = conversational_rag_chain.invoke(
                     {"question": question},
-                    config={"configurable": {"session_id": session_id}},
+                    config={"configurable": {"session_id": session_id, "search_mode": search_mode}},
                 )
             answer, docs = result["answer"], result["docs"]
             st.markdown(answer)
