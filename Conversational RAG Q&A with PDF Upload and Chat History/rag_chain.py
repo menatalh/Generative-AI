@@ -41,6 +41,6 @@ def build_rag_chain(llm: BaseChatModel, retriever: BaseRetriever) -> Runnable:
 
     return {
         "docs": retrieval_chain,
-        "question": itemgetter["question"],
-        "chat_history": itemgetter["chat_history"],
+        "question": itemgetter("question"),
+        "chat_history": itemgetter("chat_history"),
     } | retrieval_chain | answer_chain
