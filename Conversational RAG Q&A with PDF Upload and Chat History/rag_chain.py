@@ -39,8 +39,11 @@ def build_rag_chain(llm: BaseChatModel, retriever: BaseRetriever) -> Runnable:
         "chat_history": itemgetter("chat_history"), 
     } | ANSWER_PROMPT | llm | StrOutputParser()
 
-    return {
+    return RunnablePassthrough() | {
         "docs": retrieval_chain,
         "question": itemgetter("question"),
         "chat_history": itemgetter("chat_history"),
-    } | retrieval_chain | answer_chain
+    } | {
+        "docs": itemgetter("docs"),
+        "answer": answer_chain,
+    }
