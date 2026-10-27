@@ -54,8 +54,8 @@ class SimpleFAQEngine(ChatEngine):
         ans = self.faq_map.get(question.lower(), "Sorry, I don't know.")
         history = self.histories.get(session_id, [])
         history.append(("human", question))
-        history.append(("ai"), ans)
+        history.append(("ai", ans))
         return ans
 
     def get_history(self, session_id: str) -> list[tuple[str, str]]:
-        return self.histories.get(session_id, [])
+        return self.histories.setdefault(session_id, [])
