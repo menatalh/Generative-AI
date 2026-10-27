@@ -2,11 +2,9 @@
 
 A Streamlit app where you upload PDFs and chat about them. Answers are grounded in the retrieved chunks, and follow-up questions are rewritten into standalone questions using the session's chat history before retrieval.
 
+## Demo
 
-
-https://github.com/user-attachments/assets/81510c62-9bbf-46ce-9fc2-3f16303f4fed
-
-
+[Watch the demo video (demo.mov)](demo.mov)
 
 ## Setup
 
