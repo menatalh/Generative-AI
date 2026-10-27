@@ -1,42 +1,46 @@
 import os
-import tempfile
 import uuid
 
 import chromadb
 import groq
 import streamlit as st
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from api_key import APIKey
-from chat_engine import RagChatEngine
-from rag_chain import build_rag_chain
-from retriever import SEARCH_MODES, HybridRetriever
+from chatbot import Chatbot
+from config import Config
+from engines.rag_engine import RagChatEngine
+from rag.ingest import index_documents, load_pdfs, split_documents
+from rag.pipeline import build_rag_chain
+from rag.retriever import SEARCH_MODES, HybridRetriever
+
+cfg = Config()
 
 st.set_page_config(page_title="Conversational RAG with PDFs", page_icon="📄")
 st.title("Conversational RAG Q&A with PDFs")
 
-@st.cache_resource 
+@st.cache_resource
 def get_chroma_client():
     return chromadb.EphemeralClient()
 
-def index_pdfs():
-    files = st.session_state.pdfs
-    if not files:
-        return
-    docs = []
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        for f in files:
-            path = os.path.join(tmp_dir, f.name)
-            with open(path, "wb") as out:
-                out.write(f.getvalue())
-            docs.extend(PyPDFLoader(path).load())
+@st.cache_resource
+def get_embeddings(model_name: str):
+    return HuggingFaceEmbeddings(model_name=model_name)
 
-    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
-    Chroma.from_documents(chunks, HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),collection_name="student-rag",client=get_chroma_client())
+def get_vectorstore() -> Chroma:
+    return Chroma(
+        collection_name=f"{cfg.collection_name}",
+        client=get_chroma_client(),
+        embedding_function=get_embeddings(cfg.embedding_model),
+    )
+
+def index_pdfs():
+    docs, errors = load_pdfs(st.session_state.pdfs or [], cfg.max_file_mb)
+    chunks = split_documents(docs, cfg.chunk_size, cfg.chunk_overlap)
+    index_documents(get_vectorstore(), chunks)
+    st.session_state.ingest_errors = errors
 
 groq_key = APIKey("Groq", "gsk_")
 
@@ -50,7 +54,10 @@ with st.sidebar:
     uploaded_files = st.file_uploader(
         "Upload PDFs", type="pdf", accept_multiple_files=True,
         key="pdfs", on_change=index_pdfs,
+        help=f"Up to {cfg.max_file_mb} MB per file",
     )
+    for error in st.session_state.get("ingest_errors", []):
+        st.warning(error)
 
     show_sources = st.toggle("Show retrieved sources", value=False)
 
@@ -68,10 +75,9 @@ with st.bottom.container(horizontal=True, vertical_alignment="bottom"):
     )
     question = st.chat_input("Ask a question about your PDFs", submit_mode="disable")
 
-vectorstore = Chroma(collection_name="student-rag", client=get_chroma_client(), embedding_function=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"))
-retriever = HybridRetriever(vectorstore=vectorstore, mode=search_mode, k=4)
+retriever = HybridRetriever(vectorstore=get_vectorstore(), mode=search_mode, k=cfg.k, fetch_k=cfg.fetch_k)
 
-llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0, api_key=api_key)
+llm = ChatGroq(model=cfg.llm_model, temperature=cfg.temperature, api_key=api_key)
 
 rag_chain = build_rag_chain(llm, retriever)
 
@@ -81,7 +87,7 @@ if "store" not in st.session_state:
 if "sources" not in st.session_state:
     st.session_state.sources = {}
 
-engine = RagChatEngine(rag_chain, st.session_state.store, st.session_state.sources)
+chatbot = Chatbot(RagChatEngine(rag_chain, st.session_state.store, st.session_state.sources))
 
 def render_sources(docs):
     with st.expander(f"Sources ({len(docs)})", icon=":material/description:", type="compact"):
@@ -91,16 +97,17 @@ def render_sources(docs):
             st.caption(f"{name}, page {page + 1}" if page is not None else name)
             st.text(doc.page_content)
 
-session_sources = engine.get_sources(session_id)
+session_sources = chatbot.sources(session_id)
 assistant_turn = 0
-for role, content in engine.get_history(session_id):
+for role, content in chatbot.history(session_id):
     if role == "human":
         with st.chat_message("user"):
             st.markdown(content)
     else:
         with st.chat_message("assistant"):
             st.markdown(content)
-            render_sources(session_sources[assistant_turn])
+            if show_sources:
+                render_sources(session_sources[assistant_turn])
         assistant_turn += 1
 
 if question:
@@ -110,11 +117,11 @@ if question:
     with st.chat_message("assistant"):
         try:
             with st.spinner("Thinking..."):
-                answer = engine.answer(session_id, question)
+                answer = chatbot.ask(session_id, question)
             st.markdown(answer)
         except groq.AuthenticationError:
             groq_key.forget()
             st.error("The Groq API key was rejected. Check it in the sidebar.")
         else:
             if show_sources:
-                render_sources(engine.get_sources(session_id)[-1])
+                render_sources(chatbot.sources(session_id)[-1])
