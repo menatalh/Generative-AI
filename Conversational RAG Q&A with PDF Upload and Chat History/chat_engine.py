@@ -5,7 +5,6 @@ from langchain_core.documents import Document
 from langchain_core.runnables import Runnable
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-
 class ChatEngine(ABC):
     @abstractmethod
     def answer(self, session_id: str, question: str) -> str:
@@ -39,8 +38,11 @@ class RagChatEngine(ChatEngine):
         self.sources.setdefault(session_id, []).append(result["docs"])
         return result["answer"]
 
-    def get_history(self, session_id: str) -> list[tuple[str, str]] : 
-        return [(m.type, m.content) for m in self._session_history(session_id).messages]
+    def get_history(self, session_id: str) -> list[tuple[str, str]]:
+        history = self.store.get(session_id)
+        if history is None:
+            return []
+        return [(m.type, m.content) for m in history.messages]
 
     def get_sources(self, session_id: str) -> list[list[Document]]:
         return self.sources.get(session_id, [])
