@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+.agents/
+.claude/
+.DS_Store
+credentials.json
+users.json
