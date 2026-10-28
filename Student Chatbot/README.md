@@ -2,6 +2,8 @@
 
 A Streamlit app for managing a MySQL student database, with admin and user logins and a simple chatbot that answers questions about student grades.
 
+[Watch the demo video](https://drive.google.com/file/d/17uoF6C5zFMtNsLtseoYlCpxzx9QzMfrx/view?usp=sharing)
+
 ## Features
 
 - **Login / Registration**: admins log in with the account in `credentials.json`; new users register and are saved to `users.json`. Passwords are stored as SHA-256 hashes.
