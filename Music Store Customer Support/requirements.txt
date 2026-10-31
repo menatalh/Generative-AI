@@ -1,0 +1,6 @@
+langgraph
+langchain
+langchain-community 
+langchain-groq 
+sqlalchemy 
+requests
