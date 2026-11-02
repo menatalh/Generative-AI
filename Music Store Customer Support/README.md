@@ -4,7 +4,7 @@ A multi-agent customer support assistant for a digital music store, built with L
 
 ## Demo
 
-[Watch the demo video (demo.mov)](demo.mov)
+[Watch the demo video](https://drive.google.com/file/d/1eWsfdxkX_c5T83wGGlJZCmwDhP9tIVHU/view?usp=sharing)
 
 ## Setup
 
