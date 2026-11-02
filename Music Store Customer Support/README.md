@@ -41,10 +41,6 @@ The first cell downloads the Chinook SQL script from GitHub and loads it into an
 - **Long-term memory** (`load_memory`, `create_memory`): an `InMemoryStore` holds one `UserProfile` (a list of music preferences) per customer under the namespace `("memory_profile", customer_id)`. `load_memory` reads it into the state before the supervisor runs, and `create_memory` asks the LLM to merge new preferences from the conversation and saves them after.
 - **Short-term memory**: a `MemorySaver` checkpointer keeps each thread's messages and `customer_id` between turns.
 
-All SQL tools use bound parameters (`:artist`, `:customer_id`), never string formatting, so values written by the LLM can't inject SQL.
-
-The database, checkpointer, and store all live in memory, so everything resets when the kernel restarts.
-
 ## Test scenarios
 
 | Scenario | Thread | Expected result |
