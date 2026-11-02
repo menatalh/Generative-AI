@@ -30,14 +30,8 @@ The first cell downloads the Chinook SQL script from GitHub and loads it into an
 
 ## How it works
 
-```
-START ──> verify_info ──(verified)──> load_memory ──> supervisor ──> create_memory ──> END
-              ▲    │                                    │      ▲
-              │    └──(not verified)──> human_input     │      │
-              └─────────────────────────────┘           ▼      │
-                                             music_catalog_subagent
-                                             invoice_information_subagent
-```
+<img width="1316" height="298" alt="Screenshot 2026-11-02 at 12 18 19 PM" src="https://github.com/user-attachments/assets/9e633e9c-ae29-44fa-9b33-f8ca1c062ce6" />
+
 
 - **Verification** (`verify_info`): the LLM extracts a customer ID, email, or phone number from the message with structured output, then a database lookup maps it to a `CustomerId`. Phone numbers are compared by digits only, so `+55 12 39235555` matches `+55 (12) 3923-5555`. Once verified, `customer_id` stays in the thread state and later turns skip this step.
 - **Human-in-the-loop** (`human_input`): if no valid identifier is found, the graph pauses with `interrupt()`. The caller resumes it with `Command(resume="...")`, and the reply goes back through `verify_info` until it succeeds.
